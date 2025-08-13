@@ -271,3 +271,95 @@
     wins: uint,
     losses: uint
   })
+
+(define-private (update-user-activity (user principal) (amount uint))
+  (let ((activity (default-to {
+                    markets-participated: u0,
+                    total-volume: u0,
+                    last-activity-block: stacks-block-height,
+                    positions-count: u0,
+                    wins: u0,
+                    losses: u0
+                  } (map-get? user-activity user))))
+    (map-set user-activity user
+      (merge activity {
+        total-volume: (+ (get total-volume activity) amount),
+        last-activity-block: stacks-block-height
+      }))))
+
+(define-map featured-markets
+  uint
+  { featured-until: uint, promoted-by: principal })
+
+(define-map market-whitelist
+  { market-id: uint, user: principal }
+  { allowed: bool })
+
+(define-data-var total-markets-created uint u0)
+(define-data-var total-volume uint u0)
+(define-data-var total-fees-collected uint u0)
+
+(define-constant error-pool-liquidity (err u16))
+(define-constant error-max-liquidity (err u17))
+(define-constant error-paused (err u18))
+(define-constant error-invalid-withdrawal (err u19))
+(define-constant error-liquidity-locked (err u20))
+(define-constant error-threshold-not-met (err u21))
+(define-constant error-invalid-oracle (err u22))
+(define-constant error-invalid-fee (err u23))
+(define-constant error-invalid-category (err u24))
+
+;; Example from add-market-liquidity
+(asserts! (not (var-get protocol-paused)) error-paused)
+
+;; Define market categories
+(define-map market-categories
+  uint
+  {
+    category: (string-ascii 20),
+    subcategory: (optional (string-ascii 30))
+  })
+
+;; Mapping of categories to market-ids
+(define-map category-markets
+  (string-ascii 20)
+  (list 100 uint))
+
+;; Get markets by category
+(define-read-only (get-markets-by-category (category (string-ascii 20)))
+  (default-to (list) (map-get? category-markets category)))
+
+;; Check if category is valid
+(define-read-only (is-valid-category (category (string-ascii 20)))
+  (or 
+    (is-eq category "sports")
+    (is-eq category "crypto")
+    (is-eq category "politics")
+    (is-eq category "finance")
+    (is-eq category "entertainment")
+    (is-eq category "science")
+    (is-eq category "other")))
+
+;; Get market category
+(define-read-only (get-market-category (market-id uint))
+  (map-get? market-categories market-id))
+
+;; Helper to check if sender is market creator or contract owner
+(define-private (is-market-creator-or-owner (market-id uint))
+  (let ((market (map-get? markets market-id)))
+    (match market
+      market-data (or (is-eq tx-sender (get creator market-data))
+                      (is-eq tx-sender contract-owner))
+      false)))
+
+;; Market tags
+(define-map market-tags
+  uint
+  (list 5 (string-ascii 20)))
+
+;; Set market tags
+(define-public (set-market-tags (market-id uint) (tags (list 5 (string-ascii 20))))
+  (begin
+    (asserts! (is-market-creator-or-owner market-id) error-unauthorized)
+    (map-set market-tags market-id tags)
+    (ok true)))
